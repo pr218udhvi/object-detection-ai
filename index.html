@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Live Object Detection</title>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+
+<style>
+    body {
+        font-family: Arial, sans-serif;
+        text-align: center;
+        background: #222;
+        color: white;
+        margin: 0;
+        padding: 20px;
+    }
+
+    .video-container {
+        position: relative;
+        display: inline-block;
+        margin-top: 20px;
+    }
+
+    video, canvas {
+        border-radius: 10px;
+        max-width: 100%;
+    }
+
+    canvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+    }
+
+    #status {
+        margin-top: 10px;
+        font-size: 1.2rem;
+        color: #4CAF50;
+    }
+
+    button {
+        margin-top: 15px;
+        padding: 10px 15px;
+        font-size: 16px;
+        cursor: pointer;
+    }
+</style>
+</head>
+
+<body>
+
+<h2>Live Object Detection</h2>
+<div id="status">Loading AI Model...</div>
+
+<div class="video-container">
+    <video id="webcam" autoplay playsinline muted></video>
+    <canvas id="canvas"></canvas>
+</div>
+
+<br>
+<button onclick="stopCamera()">Stop Camera</button>
+
+<script>
+const video = document.getElementById('webcam');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const statusText = document.getElementById('status');
+
+let stream = null;
+let isRunning = true;
+
+// ✅ Check browser support
+if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    alert("Your browser does not support camera access.");
+}
+
+// ✅ Setup Camera
+async function setupCamera() {
+    try {
+        stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'environment' },
+            audio: false
+        });
+
+        video.srcObject = stream;
+
+        return new Promise((resolve) => {
+            video.onloadedmetadata = () => {
+                resolve();
+            };
+        });
+
+    } catch (error) {
+        statusText.innerText = "Camera access denied!";
+        statusText.style.color = "red";
+        console.error(error);
+    }
+}
+
+// ✅ Stop Camera
+function stopCamera() {
+    isRunning = false;
+    if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+    }
+    statusText.innerText = "Camera stopped.";
+}
+
+// ✅ Detect Objects
+async function detectObjects(model) {
+    if (!isRunning) return;
+
+    const predictions = await model.detect(video);
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    predictions.forEach(prediction => {
+        const [x, y, width, height] = prediction.bbox;
+        const label = `${prediction.class} (${Math.round(prediction.score * 100)}%)`;
+
+        // Draw box
+        ctx.strokeStyle = "lime";
+        ctx.lineWidth = 3;
+        ctx.strokeRect(x, y, width, height);
+
+        // Text background
+        ctx.fillStyle = "lime";
+        const textWidth = ctx.measureText(label).width;
+        ctx.fillRect(x, y > 20 ? y - 20 : y, textWidth + 10, 20);
+
+        // Text
+        ctx.fillStyle = "black";
+        ctx.font = "16px Arial";
+        ctx.fillText(label, x + 5, y > 20 ? y - 5 : y + 15);
+    });
+
+    // ✅ Smooth loop (better than requestAnimationFrame here)
+    setTimeout(() => detectObjects(model), 100);
+}
+
+// ✅ Main Function
+async function main() {
+    try {
+        statusText.innerText = "Loading model...";
+        const model = await cocoSsd.load();
+
+        statusText.innerText = "Starting camera...";
+        await setupCamera();
+
+        video.play();
+
+        // Match canvas size
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+
+        statusText.innerText = "Detecting objects...";
+
+        detectObjects(model);
+
+    } catch (error) {
+        statusText.innerText = "Error loading model!";
+        statusText.style.color = "red";
+        console.error(error);
+    }
+}
+
+main();
+</script>
+
+</body>
+</html>
